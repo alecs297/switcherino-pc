@@ -18,7 +18,7 @@ LOG_FILE = LOG_DIR / "switcherino-pc.log"
 @dataclass
 class ControllerProfile:
     name_contains: str
-    home_button_indices: List[int]
+    shortcut_button_indices: List[int]
 
 
 @dataclass
@@ -56,14 +56,14 @@ class AppConfig:
     rpi_status_poll_interval_seconds: float = 30.0
     controller_backend: str = "pygame"
     controller_poll_interval_seconds: float = 0.05
-    home_button_hold_seconds: float = 3.0
+    controller_shortcut_hold_seconds: float = 1.0
     require_quiet_controller_hold: bool = True
     analog_deadzone: float = 0.35
     controller_profiles: List[ControllerProfile] = field(
         default_factory=lambda: [
-            ControllerProfile(name_contains="Xbox", home_button_indices=[5]),
-            ControllerProfile(name_contains="DualSense", home_button_indices=[5]),
-            ControllerProfile(name_contains="Wireless Controller", home_button_indices=[5]),
+            ControllerProfile(name_contains="Xbox", shortcut_button_indices=[5, 10]),
+            ControllerProfile(name_contains="DualSense", shortcut_button_indices=[5, 10]),
+            ControllerProfile(name_contains="Wireless Controller", shortcut_button_indices=[5, 10]),
         ]
     )
     default_profile: ModeProfile = field(default_factory=ModeProfile)
@@ -115,7 +115,7 @@ def write_default_config(path: Path = CONFIG_PATH) -> AppConfig:
 def _parse_controller_profiles(items: list) -> List[ControllerProfile]:
     profiles = []
     for item in items or []:
-        raw_indices = item.get("home_button_indices")
+        raw_indices = item.get("shortcut_button_indices")
         if isinstance(raw_indices, list):
             indices = []
             for value in raw_indices:
@@ -126,19 +126,15 @@ def _parse_controller_profiles(items: list) -> List[ControllerProfile]:
                 if index >= 0 and index not in indices:
                     indices.append(index)
         else:
-            try:
-                legacy_index = int(item.get("home_button_index", -1))
-            except (TypeError, ValueError):
-                legacy_index = -1
-            indices = [legacy_index] if legacy_index >= 0 else []
+            indices = []
 
         profiles.append(
             ControllerProfile(
                 name_contains=str(item.get("name_contains", "")).strip(),
-                home_button_indices=indices,
+                shortcut_button_indices=indices,
             )
         )
-    return [profile for profile in profiles if profile.name_contains and profile.home_button_indices]
+    return [profile for profile in profiles if profile.name_contains and profile.shortcut_button_indices]
 
 
 def _normalize_display_topology(value: str) -> str:

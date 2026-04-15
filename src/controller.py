@@ -2,7 +2,7 @@ import asyncio
 import logging
 import threading
 import time
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, Optional, Set
 
 from .config import AppConfig, ControllerProfile
 
@@ -80,24 +80,20 @@ class ControllerMonitor:
                         {
                             "started_at": None,
                             "cancelled": False,
-                            "home_button": None,
+                            "pressed_buttons": set(),
+                            "trigger_buttons": set(),
                             "joystick_name": joystick.get_name(),
                         },
                     )
                     current["joystick_name"] = joystick.get_name()
-                    home_buttons = set(profile.home_button_indices)
+                    shortcut_buttons = set(profile.shortcut_button_indices)
 
                     if event.type == pygame.JOYBUTTONDOWN:
-                        if event.button in home_buttons:
-                            current["started_at"] = time.monotonic()
-                            current["cancelled"] = False
-                            current["home_button"] = event.button
-                        elif current.get("started_at") is not None and self.config.require_quiet_controller_hold:
-                            self._cancel_hold(current)
-                    elif event.type == pygame.JOYBUTTONUP and event.button in home_buttons:
-                        current["started_at"] = None
-                        current["cancelled"] = False
-                        current["home_button"] = None
+                        current["pressed_buttons"].add(event.button)
+                        self._refresh_shortcut_state(current, shortcut_buttons)
+                    elif event.type == pygame.JOYBUTTONUP:
+                        current["pressed_buttons"].discard(event.button)
+                        self._refresh_shortcut_state(current, shortcut_buttons)
                     elif (
                         event.type == pygame.JOYAXISMOTION
                         and current.get("started_at") is not None
@@ -130,18 +126,18 @@ class ControllerMonitor:
             started_at = state.get("started_at")
             if started_at is None or state.get("cancelled"):
                 continue
-            if time.monotonic() - started_at < self.config.home_button_hold_seconds:
+            if time.monotonic() - started_at < self.config.controller_shortcut_hold_seconds:
                 continue
 
             logger.info(
-                "Controller shortcut detected on joystick %s (%s) with button %s",
+                "Controller shortcut detected on joystick %s (%s) with buttons %s",
                 joy,
                 state.get("joystick_name", "<unknown>"),
-                state.get("home_button"),
+                sorted(state.get("trigger_buttons", set())),
             )
             state["started_at"] = None
             state["cancelled"] = False
-            state["home_button"] = None
+            state["trigger_buttons"] = set()
             try:
                 self.trigger_callback("controller_hold")
             except Exception:
@@ -151,6 +147,22 @@ class ControllerMonitor:
         if state.get("cancelled"):
             return
         state["cancelled"] = True
+
+    def _refresh_shortcut_state(self, state: Dict, shortcut_buttons: Set[int]) -> None:
+        pressed_buttons = state.get("pressed_buttons", set())
+        if pressed_buttons == shortcut_buttons:
+            if state.get("started_at") is None or state.get("cancelled"):
+                state["started_at"] = time.monotonic()
+                state["cancelled"] = False
+                state["trigger_buttons"] = set(shortcut_buttons)
+            return
+
+        state["started_at"] = None
+        state["trigger_buttons"] = set()
+        if pressed_buttons.intersection(shortcut_buttons):
+            state["cancelled"] = True
+        else:
+            state["cancelled"] = False
 
     def _match_profile(self, joystick_name: str) -> Optional[ControllerProfile]:
         name = joystick_name.lower()

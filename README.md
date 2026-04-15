@@ -41,7 +41,7 @@ High-level responsibilities:
 
 Typical gaming-mode flow:
 
-1. you hold the controller home button for 3 seconds, click the tray action, or call `POST /pc/action`
+1. you hold the configured controller shortcut for the configured duration, click the tray action, or call `POST /pc/action`
 2. `switcherino-pc` asks `switcherino-rpi` to enter TV gaming mode
 3. the PC applies the configured `gaming_profile`
 4. the PC launches Steam Big Picture
@@ -70,7 +70,8 @@ flowchart LR
 - quick access to config and logs from the tray
 - optional autostart at Windows login
 - controller monitoring through `pygame`
-- long press on the Xbox / PlayStation home button to trigger gaming mode
+- long press on a configurable controller button shortcut to trigger gaming mode
+- default shortcut is `PS/Xbox + R1` using button indices `5` and `10`
 - Windows display switching through the `DisplaySwitch.exe` topologies
 - Windows audio endpoint and volume switching
 - Steam Big Picture launch and automatic rollback when it closes
@@ -89,7 +90,7 @@ The app is intentionally small and split into focused modules:
 | Gaming orchestration | `src/gaming_mode.py` | Enter/exit game mode, coordinate Pi calls, display/audio changes, and Steam monitoring |
 | Raspberry Pi bridge | `src/rpi_client.py` | Call `switcherino-rpi`, handle TLS trust and optional fingerprint pinning |
 | Windows integration | `src/profile_actions.py`, `src/windows.py`, `src/autostart.py` | Switch display/audio, detect remote sessions, manage startup with Windows |
-| Controller input | `src/controller.py` | Watch gamepads and detect a long home-button press |
+| Controller input | `src/controller.py` | Watch gamepads and detect a long button-shortcut hold |
 | Steam detection | `src/steam.py` | Detect Big Picture windows and trigger rollback when they disappear |
 | Tray UI | `src/tray.py` | Surface status and manual actions in the Windows tray |
 | Setup/build scripts | `scripts/*.ps1`, `switcherino-pc.spec` | Initial setup, profile capture, debug helpers, and PyInstaller build |
@@ -323,21 +324,21 @@ Example config:
   "rpi_status_poll_interval_seconds": 30.0,
   "controller_backend": "pygame",
   "controller_poll_interval_seconds": 0.05,
-  "home_button_hold_seconds": 3.0,
+  "controller_shortcut_hold_seconds": 3.0,
   "require_quiet_controller_hold": true,
   "analog_deadzone": 0.35,
   "controller_profiles": [
     {
       "name_contains": "Xbox",
-      "home_button_indices": [5]
+      "shortcut_button_indices": [5, 10]
     },
     {
       "name_contains": "DualSense",
-      "home_button_indices": [5]
+      "shortcut_button_indices": [5, 10]
     },
     {
       "name_contains": "Wireless Controller",
-      "home_button_indices": [5]
+      "shortcut_button_indices": [5, 10]
     }
   ],
   "default_profile": {
@@ -395,10 +396,10 @@ Example config:
 | `rpi_status_poll_interval_seconds` | Poll interval used for refreshing cached Raspberry Pi status |
 | `controller_backend` | Controller backend selection. V1 currently supports `pygame` |
 | `controller_poll_interval_seconds` | Sleep interval used by the controller monitor loop |
-| `home_button_hold_seconds` | Duration the controller home button must stay pressed before triggering gaming mode |
+| `controller_shortcut_hold_seconds` | Duration the configured controller shortcut must stay pressed before triggering gaming mode |
 | `require_quiet_controller_hold` | Whether other controller input cancels the hold trigger |
 | `analog_deadzone` | Minimum analog axis movement considered meaningful controller activity |
-| `controller_profiles` | Controller name matching and home-button mapping used by the controller monitor |
+| `controller_profiles` | Controller name matching and button-shortcut mapping used by the controller monitor |
 | `default_profile.display.topology` | Display topology used when returning to the normal PC state |
 | `default_profile.audio.enabled` | Whether the default profile restores audio |
 | `default_profile.audio.endpoint_id` | Windows endpoint ID used when returning to the default profile |
@@ -425,7 +426,7 @@ Example config:
 Each `controller_profiles` entry contains:
 
 - `name_contains`
-- `home_button_indices`
+- `shortcut_button_indices`
 
 Minimum useful setup:
 
@@ -449,14 +450,16 @@ Target behavior:
 - Xbox controllers
 - DualSense controllers
 - generic PlayStation-style `Wireless Controller` naming
-- holding the home button for 3 seconds enters gaming mode
+- holding the configured shortcut for the configured duration enters gaming mode
+- the hold duration is configurable with `controller_shortcut_hold_seconds`
+- by default the shortcut is `PS/Xbox + R1`, which maps to button indices `5` and `10`, pressed together with no other button presses allowed
 - other controller activity during the hold cancels the trigger when `require_quiet_controller_hold` is enabled
 
 Important controller notes:
 
 - home-button indexing can vary depending on controller, driver, and SDL mapping on Windows
-- the default config currently uses button `5` for both Xbox and PlayStation-family controllers on this setup
-- you should validate the configured indices on your own hardware
+- the default config currently uses `PS/Xbox + R1` for Xbox and PlayStation-family controllers on this setup, mapped to button indices `5` and `10`
+- you should validate the configured shortcut indices on your own hardware
 - a debugging script exists for identifying your controller's indexes
 
 ## API
