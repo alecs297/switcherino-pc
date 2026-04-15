@@ -200,14 +200,6 @@ def load_config(path: Path = CONFIG_PATH) -> AppConfig:
     raw = json.loads(path.read_text(encoding="utf-8-sig"))
     defaults = _default_config()
 
-    # Migrate the previous default hold duration to the new validated default.
-    # If the user explicitly chose another value, keep it untouched.
-    try:
-        if float(raw.get("home_button_hold_seconds", defaults.home_button_hold_seconds)) == 5.0:
-            raw["home_button_hold_seconds"] = defaults.home_button_hold_seconds
-    except (TypeError, ValueError):
-        raw["home_button_hold_seconds"] = defaults.home_button_hold_seconds
-
     raw["controller_profiles"] = _parse_controller_profiles(raw.get("controller_profiles", [])) or defaults.controller_profiles
     raw["default_profile"] = _parse_mode_profile(raw.get("default_profile"), defaults.default_profile)
     raw["gaming_profile"] = _parse_mode_profile(raw.get("gaming_profile"), defaults.gaming_profile)

@@ -39,7 +39,7 @@ class RpiClient:
         url = self.config.rpi_base_url.rstrip("/") + "/tv/status"
         headers = {"Authorization": "Bearer " + self.config.rpi_api_key}
 
-        async with httpx.AsyncClient(verify=verify, timeout=5.0) as client:
+        async with httpx.AsyncClient(verify=verify, timeout=10.0) as client:
             response = await client.get(url, headers=headers)
             response.raise_for_status()
             data = response.json()
@@ -65,7 +65,7 @@ class RpiClient:
         headers = {"Authorization": "Bearer " + self.config.rpi_api_key}
         payload = {"action": action}
 
-        async with httpx.AsyncClient(verify=verify, timeout=5.0) as client:
+        async with httpx.AsyncClient(verify=verify, timeout=10.0) as client:
             response = await client.post(url, headers=headers, json=payload)
             response.raise_for_status()
             data = response.json()
