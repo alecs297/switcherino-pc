@@ -13,3 +13,5 @@ def configure_logging(level: str) -> None:
             logging.StreamHandler(),
         ],
     )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
