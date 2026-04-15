@@ -71,9 +71,9 @@ class AppConfig:
     launch_big_picture_command: str = 'cmd /c start "" "steam://open/bigpicture"'
     exit_big_picture_command: str = 'cmd /c start "" "steam://close/bigpicture"'
     steam_window_title_contains: str = "Big Picture"
-    steam_launch_grace_seconds: float = 10.0
-    steam_poll_interval_seconds: float = 2.0
-    steam_missing_polls_before_exit: int = 3
+    steam_launch_grace_seconds: float = 5.0
+    steam_poll_interval_seconds: float = 3.0
+    steam_missing_polls_before_exit: int = 2
     autostart_enabled: bool = False
     autostart_command: str = ""
     tray_enabled: bool = True
