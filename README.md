@@ -1,61 +1,176 @@
 # switcherino-pc
 
-Utility for controlling a local Windows gaming-mode workflow while coordinating with [`switcherino-rpi`](https://github.com/alecs297/switcherino-rpi).
+Windows companion app for [`switcherino-rpi`](https://github.com/alecs297/switcherino-rpi).
 
-The main objective is to let a Windows PC expose a small local HTTPS API, react to controller shortcuts, switch local display and audio profiles, launch Steam Big Picture, and keep that in sync with the Raspberry Pi bridge that controls the TV side.
+`switcherino-pc` is the Windows side of a two-part living-room gaming setup:
 
-## What This Project Does
+- the PC knows how to switch its own display/audio state
+- the Raspberry Pi knows how to control the TV
+- both work together so a single action can move the whole setup from "desktop mode" to "gaming on TV mode"
 
-This project turns a Windows PC into a small control bridge for local gaming mode:
+This repository focuses on the PC bridge: a local HTTPS API, a tray app, controller shortcut detection, Windows profile switching, and Steam Big Picture orchestration.
 
-- the PC runs a local HTTPS API
-- the API uses Bearer-token authentication
-- the app can start automatically when the user logs in
-- the app monitors connected controllers
-- holding the Xbox / PS home button for 3 seconds can trigger gaming mode
-- gaming mode can also be triggered through the local API
-- entering gaming mode can call the Raspberry Pi API, switch the local display topology, switch the local default audio device and volume, and launch Steam Big Picture
-- when Big Picture exits, the app can roll everything back automatically
+## Why This Exists
 
-The Raspberry Pi remains responsible for the TV-side behavior. This project only handles the PC-side behavior.
+The goal is simple: make a gaming PC feel more like a console when used from the couch, without losing a normal desktop setup the rest of the time.
 
-## Setup Model
+Typical problem:
 
-The setup is:
+- during normal use, the PC may use one monitor setup and one audio device
+- during TV gaming, the desired target is often a different display topology and a different audio endpoint
+- the TV may also need to switch to the right HDMI input
+- Steam Big Picture should launch when entering the gaming state, then restore everything when it closes
 
-- the Raspberry Pi runs `switcherino-rpi`
-- the Windows PC runs `switcherino-pc`
-- the PC asks the Pi to enter or leave gaming mode
-- the Pi switches the TV side
-- the PC switches its own local display and audio side
+`switcherino-pc` exists to automate the Windows part of that flow, while [`switcherino-rpi`](https://github.com/alecs297/switcherino-rpi) handles the TV side.
 
-Typical flow:
+## The Full Setup
 
-1. hold the controller home button for 3 seconds, or call `POST /pc/action`
-2. the PC calls the Pi to enter gaming mode
+If you use the complete system, both repositories go together:
+
+- [`switcherino-pc`](https://github.com/alecs297/switcherino-pc): Windows tray app + local API + controller/Steam/display/audio orchestration
+- [`switcherino-rpi`](https://github.com/alecs297/switcherino-rpi): Raspberry Pi HTTPS bridge for LG WebOS TV control, source switching, and optional wake flow
+
+High-level responsibilities:
+
+| Component | Responsibility |
+| --- | --- |
+| `switcherino-pc` | Detect trigger, expose local API, switch Windows display/audio profile, launch/monitor Steam Big Picture, roll back on exit |
+| `switcherino-rpi` | Control the TV over WebOS, switch HDMI source, optionally wake the TV with Wake-on-LAN, isolate TV networking through the Pi |
+
+## End-To-End Flow
+
+Typical gaming-mode flow:
+
+1. you hold the controller home button for 3 seconds, click the tray action, or call `POST /pc/action`
+2. `switcherino-pc` asks `switcherino-rpi` to enter TV gaming mode
 3. the PC applies the configured `gaming_profile`
 4. the PC launches Steam Big Picture
-5. when Big Picture exits, the PC applies the configured `default_profile` and calls the Pi to return to default mode
+5. while Steam is running, the gaming state stays active
+6. when Big Picture exits, the PC restores the configured `default_profile`
+7. the PC asks the Raspberry Pi bridge to return the TV side to default mode
 
-## Delivery Model
+```mermaid
+flowchart LR
+  C["Controller long press"] --> PC["switcherino-pc"]
+  T["Tray action"] --> PC
+  API["Local HTTPS API"] --> PC
+  PC --> RPI["switcherino-rpi"]
+  PC --> DISP["Windows display topology"]
+  PC --> AUD["Windows audio endpoint"]
+  PC --> STEAM["Steam Big Picture"]
+  RPI --> TV["LG TV / WebOS"]
+```
 
-The recommended delivery format is a Windows `.exe` built with `PyInstaller`.
+## Features
 
-During development, the app can still be run directly with Python.
+- local HTTPS API with Bearer-token authentication
+- tray icon for runtime status and quick actions
+- manual gaming mode on/off from the tray
+- local web server restart from the tray
+- quick access to config and logs from the tray
+- optional autostart at Windows login
+- controller monitoring through `pygame`
+- long press on the Xbox / PlayStation home button to trigger gaming mode
+- Windows display switching through the `DisplaySwitch.exe` topologies
+- Windows audio endpoint and volume switching
+- Steam Big Picture launch and automatic rollback when it closes
+- persistent config, logs, and certificates under `%LOCALAPPDATA%`
+- PyInstaller packaging for a background Windows executable
+- Raspberry Pi bridge integration through [`switcherino-rpi`](https://github.com/alecs297/switcherino-rpi)
 
-The packaged app is designed to run in the background with a tray icon that allows you to:
+## Architecture
+
+The app is intentionally small and split into focused modules:
+
+| Area | Main files | Purpose |
+| --- | --- | --- |
+| App/bootstrap | `app.py`, `src/runtime.py`, `src/app.py` | Start the runtime, spawn the HTTPS server, wire FastAPI lifespan and background monitors |
+| State/config | `src/config.py`, `src/models.py` | Persist settings, normalize config, define request models |
+| Gaming orchestration | `src/gaming_mode.py` | Enter/exit game mode, coordinate Pi calls, display/audio changes, and Steam monitoring |
+| Raspberry Pi bridge | `src/rpi_client.py` | Call `switcherino-rpi`, handle TLS trust and optional fingerprint pinning |
+| Windows integration | `src/profile_actions.py`, `src/windows.py`, `src/autostart.py` | Switch display/audio, detect remote sessions, manage startup with Windows |
+| Controller input | `src/controller.py` | Watch gamepads and detect a long home-button press |
+| Steam detection | `src/steam.py` | Detect Big Picture windows and trigger rollback when they disappear |
+| Tray UI | `src/tray.py` | Surface status and manual actions in the Windows tray |
+| Setup/build scripts | `scripts/*.ps1`, `switcherino-pc.spec` | Initial setup, profile capture, debug helpers, and PyInstaller build |
+
+Important architectural choices:
+
+- the PC exposes its own HTTPS API so triggers can come from the controller, tray, or another local client
+- the Pi and PC use a compatible action vocabulary (`switch_to_game_mode`, `switch_to_default_mode`) to keep orchestration simple
+- Windows switching is intentionally conservative in V1: display topology, default audio endpoint, and volume
+- rollback is tied to Steam Big Picture visibility, not only to manual actions
+- switching is blocked during Remote Desktop sessions to avoid unsafe display/audio changes
+
+## Relationship With `switcherino-rpi`
+
+The companion repo is not optional if you want automatic TV/source switching, but `switcherino-pc` is still usable on its own for local Windows automation.
+
+What the Pi project adds:
+
+- an HTTPS API on the Raspberry Pi
+- LG WebOS integration
+- source switching between the default TV source and the gaming source
+- optional Wake-on-LAN for turning the TV on
+- a Wi-Fi/hotspot model that keeps the TV off your main network and most importantly, off the internet
+
+The PC app calls the Pi on:
+
+- `GET /tv/status`
+- `POST /tv/action`
+
+The Pi app typically exposes:
+
+- `switch_to_game_mode` to move the TV to the gaming input
+- `switch_to_default_mode` to restore the default source
+- `turn_on`, `turn_off`, and `change_source` for TV-only workflows
+
+## Tray Menu
+
+The packaged app is designed to run in the background with a tray icon that lets you:
 
 - view the current runtime status
 - enable or disable gaming mode manually
 - restart the local web server
-- enable or disable autostart
+- enable or disable startup with Windows
+- open the local API docs
 - open the config file
 - open the log file
-- quit the app cleanly
+- quit cleanly
 
-## Installation
+## Persistence
 
-### 1 - Create a virtual environment and install dependencies
+The app stores its local state under:
+
+```text
+%LOCALAPPDATA%\SwitcherinoPc
+```
+
+Important persisted files and folders:
+
+- config: `%LOCALAPPDATA%\SwitcherinoPc\config.json`
+- certificates: `%LOCALAPPDATA%\SwitcherinoPc\certs`
+- logs: `%LOCALAPPDATA%\SwitcherinoPc\logs\switcherino-pc.log`
+
+This means config, generated certs, and logs survive restarts and upgrades.
+
+## Quick Start
+
+If you just want to run the project locally once:
+
+```powershell
+python -m venv venv
+venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+scripts\initial-setup.ps1
+python app.py
+```
+
+On first start, the app creates its config and self-signed certificate files automatically.
+
+## Full installation
+
+### 1. Create a virtual environment and install dependencies
 
 ```powershell
 python -m venv venv
@@ -63,7 +178,15 @@ venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 ```
 
-### 2 - Create the initial config
+Runtime dependencies:
+
+- `fastapi` + `uvicorn` for the local HTTPS API
+- `httpx` for Raspberry Pi calls
+- `cryptography` for self-signed cert generation
+- `pygame` for controller monitoring
+- `pystray` + `Pillow` for the Windows tray app
+
+### 2. Create the initial config
 
 Run:
 
@@ -71,17 +194,19 @@ Run:
 scripts\initial-setup.ps1
 ```
 
-This will:
+This script:
 
-- create the config file if it does not exist yet
-- ask for the Raspberry Pi base URL
-- ask for the Raspberry Pi API key
-- optionally fetch `/certs` from the Raspberry Pi automatically
-- save the Pi certificate PEM locally when available
-- offer to launch the interactive display and audio profile helper
-- open the config file at the end if you want to review it manually
+- creates the config file if needed
+- asks for the Raspberry Pi base URL
+- asks for the Raspberry Pi API key
+- can fetch `/certs` from the Raspberry Pi automatically
+- stores the Pi certificate PEM locally when available
+- can launch the interactive display/audio capture helper
+- can open the config file at the end
 
-The display and audio helper can also be run directly later:
+### 3. Capture your Windows profiles
+
+The display/audio helper can be run directly:
 
 ```powershell
 scripts\display-helper.ps1
@@ -95,15 +220,84 @@ That helper:
 - stores the chosen display topology for each profile
 - stores the current default render endpoint and volume when audio capture is enabled
 
-You can also start the app directly once:
+Recommended capture flow:
+
+1. run `scripts\display-helper.ps1`
+2. put Windows in the desired everyday state
+3. capture `default_profile`
+4. put Windows in the desired TV gaming state
+5. capture `gaming_profile`
+
+### 4. Start the app
 
 ```powershell
 python app.py
 ```
 
-On first start, the app creates its config and self-signed certificate files automatically.
+If `tray_enabled` is `true`, the tray icon becomes the primary UI. Otherwise the runtime simply keeps the local server alive.
 
-### 3 - Review the generated config
+## Local Development Setup
+
+For day-to-day development, the normal workflow is:
+
+```powershell
+python -m venv venv
+venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+scripts\initial-setup.ps1
+python app.py
+```
+
+Useful local dev notes:
+
+- config and logs are written to `%LOCALAPPDATA%`, not to the repo root
+- the app creates its own self-signed certificate if missing
+- the PC app can still run without a configured Raspberry Pi, but Pi-related steps will be skipped
+- profile switching is meaningful only on a real local Windows session
+- API docs are available locally at `/docs` and `/redoc`
+
+## Build and Packaging
+
+The recommended delivery format is a packaged Windows executable built with PyInstaller.
+
+Build-specific dependency file:
+
+```text
+requirements-build.txt
+```
+
+Current build stack:
+
+- `PyInstaller` packages the app
+- [`switcherino-pc.spec`](./switcherino-pc.spec) defines the build
+- `scripts\audio-helper.ps1` is bundled as packaged data
+- `console=False` is used so the executable runs as a background app instead of opening a console window
+
+Install build dependencies:
+
+```powershell
+python -m pip install -r requirements.txt -r requirements-build.txt
+```
+
+Build:
+
+```powershell
+scripts\build.ps1
+```
+
+What `scripts\build.ps1` does:
+
+1. installs runtime and build dependencies
+2. runs `PyInstaller --clean --noconfirm switcherino-pc.spec`
+3. writes the packaged binary to `dist\switcherino-pc.exe`
+
+Generated binary:
+
+```text
+dist\switcherino-pc.exe
+```
+
+## Configuration
 
 The config file is stored in:
 
@@ -111,7 +305,7 @@ The config file is stored in:
 %LOCALAPPDATA%\SwitcherinoPc\config.json
 ```
 
-The most important fields are:
+Example config:
 
 ```json
 {
@@ -151,10 +345,10 @@ The most important fields are:
       "topology": "internal_only"
     },
     "audio": {
-      "enabled": false,
-      "endpoint_id": "",
-      "endpoint_name": "",
-      "volume_scalar": null
+      "enabled": true,
+      "endpoint_id": "{0.0.0.00000000}.{example-default}",
+      "endpoint_name": "Speakers",
+      "volume_scalar": 0.6
     }
   },
   "gaming_profile": {
@@ -163,9 +357,9 @@ The most important fields are:
     },
     "audio": {
       "enabled": true,
-      "endpoint_id": "{0.0.0.00000000}.{example-id}",
+      "endpoint_id": "{0.0.0.00000000}.{example-gaming}",
       "endpoint_name": "LG TV",
-      "volume_scalar": 0.42
+      "volume_scalar": 1.0
     }
   },
   "launch_big_picture_command": "cmd /c start \"\" \"steam://open/bigpicture\"",
@@ -183,7 +377,7 @@ The most important fields are:
 }
 ```
 
-Configuration reference:
+### Configuration Reference
 
 | Key | Purpose |
 | --- | --- |
@@ -202,18 +396,18 @@ Configuration reference:
 | `controller_backend` | Controller backend selection. V1 currently supports `pygame` |
 | `controller_poll_interval_seconds` | Sleep interval used by the controller monitor loop |
 | `home_button_hold_seconds` | Duration the controller home button must stay pressed before triggering gaming mode |
-| `require_quiet_controller_hold` | Reserved config flag for quiet-hold behavior. In the current implementation, other controller activity still cancels the trigger |
+| `require_quiet_controller_hold` | Whether other controller input cancels the hold trigger |
 | `analog_deadzone` | Minimum analog axis movement considered meaningful controller activity |
 | `controller_profiles` | Controller name matching and home-button mapping used by the controller monitor |
 | `default_profile.display.topology` | Display topology used when returning to the normal PC state |
 | `default_profile.audio.enabled` | Whether the default profile restores audio |
 | `default_profile.audio.endpoint_id` | Windows endpoint ID used when returning to the default profile |
-| `default_profile.audio.endpoint_name` | Friendly endpoint name saved for review and logs |
+| `default_profile.audio.endpoint_name` | Friendly endpoint name saved for logs/review |
 | `default_profile.audio.volume_scalar` | Volume restored for the default profile, from `0.0` to `1.0` |
 | `gaming_profile.display.topology` | Display topology used when entering the gaming state |
 | `gaming_profile.audio.enabled` | Whether the gaming profile restores audio |
 | `gaming_profile.audio.endpoint_id` | Windows endpoint ID used when entering the gaming profile |
-| `gaming_profile.audio.endpoint_name` | Friendly endpoint name saved for review and logs |
+| `gaming_profile.audio.endpoint_name` | Friendly endpoint name saved for logs/review |
 | `gaming_profile.audio.volume_scalar` | Volume restored for the gaming profile, from `0.0` to `1.0` |
 | `launch_big_picture_command` | Command used to launch Steam Big Picture |
 | `exit_big_picture_command` | Command used to request Big Picture exit |
@@ -221,81 +415,30 @@ Configuration reference:
 | `steam_launch_grace_seconds` | Grace period after launching Big Picture before rollback detection is allowed |
 | `steam_poll_interval_seconds` | Poll interval used to detect whether Big Picture is still visible |
 | `steam_missing_polls_before_exit` | Number of consecutive failed Big Picture polls before rollback is triggered |
-| `autostart_enabled` | Enables autostart for the current user |
+| `autostart_enabled` | Enables startup with Windows for the current user |
 | `autostart_command` | Optional custom autostart command |
 | `tray_enabled` | Enables the tray icon UI |
 | `open_logs_command` | Optional custom command used by the tray to open the log location |
 | `open_config_command` | Optional custom command used by the tray to open the config location |
-| `log_level` | Logging verbosity passed to the web server runtime |
-
-Each profile contains:
-
-- `display.topology`
-- `audio.enabled`
-- `audio.endpoint_id`
-- `audio.endpoint_name`
-- `audio.volume_scalar`
+| `log_level` | Logging verbosity passed to the runtime |
 
 Each `controller_profiles` entry contains:
 
 - `name_contains`
 - `home_button_indices`
 
-Minimum setup for a useful first run:
+Minimum useful setup:
 
-- `rpi_base_url`
-- `rpi_api_key`
 - `default_profile.display.topology`
 - `gaming_profile.display.topology`
+- `rpi_base_url` and `rpi_api_key` if you want TV-side coordination
 
-You can also leave the Raspberry Pi fields blank during the initial setup if you want to start with an empty config and fill it manually later.
+Setup notes:
 
-Important setup notes:
-
-- V1 display switching is topology-based and uses the same `DisplaySwitch` model as `Win+P`
+- V1 display switching is topology-based and uses the same projection model as `Win+P`
 - supported topologies are `internal_only`, `external_only`, `clone`, and `extend`
-- audio capture stores the current default render endpoint and the current volume
-
-Recommended capture flow:
-
-1. run `scripts\display-helper.ps1`
-2. put Windows in the desired default state
-3. capture `default_profile`
-4. put Windows in the desired gaming state
-5. capture `gaming_profile`
-
-## Certificates
-
-The app generates a self-signed certificate automatically for the local HTTPS server.
-
-Generated files are stored in:
-
-```text
-%LOCALAPPDATA%\SwitcherinoPc\certs
-```
-
-Clients can retrieve certificate pinning information from:
-
-- `GET /certs`
-
-## Logging
-
-Logs are written to:
-
-```text
-%LOCALAPPDATA%\SwitcherinoPc\logs\switcherino-pc.log
-```
-
-If startup fails, the app also shows a Windows message box pointing to the config and log paths.
-
-
-## Autostart Strategy
-
-The V1 autostart strategy is implemented through a Windows registry key under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
-
-This makes autostart easy to enable or disable, and does not require administrator rights, but it does not run before login.
-
-If a future version needs pre-login startup, that would require a different model such as Task Scheduler or a Windows service.
+- audio capture stores the current default render endpoint and current volume
+- you can leave the Raspberry Pi fields blank during early local testing
 
 ## Controller Behavior
 
@@ -305,36 +448,18 @@ Target behavior:
 
 - Xbox controllers
 - DualSense controllers
+- generic PlayStation-style `Wireless Controller` naming
 - holding the home button for 3 seconds enters gaming mode
-- other controller activity during the hold cancels the trigger
+- other controller activity during the hold cancels the trigger when `require_quiet_controller_hold` is enabled
 
-Important controller note:
+Important controller notes:
 
-- home-button indexing can vary depending on the controller, driver, and SDL mapping on Windows
-- the default project config currently uses button `5` as the validated home-button index for both Xbox and PlayStation controllers on this setup
-- you should expect to validate the configured home-button indices on your own hardware
-- the default config accepts multiple candidate home-button indices per controller profile when mappings vary
+- home-button indexing can vary depending on controller, driver, and SDL mapping on Windows
+- the default config currently uses button `5` for both Xbox and PlayStation-family controllers on this setup
+- you should validate the configured indices on your own hardware
+- a debugging script exists for identifying your controller's indexes
 
-## Debug Scripts
-
-Useful scripts in [`scripts`](C:\Users\Alex\Desktop\coding\switcherino-pc\scripts):
-
-- `scripts\debug-controller.py`: prints detected controllers, button events, axis and hat movement, and reports a long press after the configured hold duration. Use it to validate the real `PS/Xbox` button index on the current machine.
-- `scripts\inspect-steam.py`: watches visible Windows titles to help debug Steam / Big Picture detection and rollback behavior.
-
-Controller debug example:
-
-```powershell
-python scripts\debug-controller.py
-```
-
-Useful options:
-
-- `--hold-seconds 3` to change the long-press threshold during tests
-- `--deadzone 0.35` to adjust how much analog movement is logged
-- `--poll-sleep 0.02` to change the polling cadence
-
-## API Behavior
+## API
 
 Swagger documentation is exposed locally through FastAPI at:
 
@@ -364,7 +489,7 @@ Returns the current bridge status, including:
 - the Raspberry Pi host
 - whether Steam Big Picture is currently detected
 - controller monitor state
-- the configured `default` and `gaming` profiles, including structured display and audio settings
+- the configured `default` and `gaming` profiles
 - whether the initial setup looks complete
 
 ### `POST /pc/action`
@@ -392,7 +517,7 @@ curl.exe -k `
   https://127.0.0.1:8443/pc/action
 ```
 
-**Note** : if Windows reports that the current session is running over Remote Desktop, `switch_to_game_mode` and `switch_to_default_mode` are rejected : the API returns `409 Conflict` in that case
+If Windows reports that the current session is running over Remote Desktop, `switch_to_game_mode` and `switch_to_default_mode` are rejected with `409 Conflict`.
 
 ## Runtime Behavior
 
@@ -414,28 +539,82 @@ Automatic rollback:
 
 - when Big Picture is no longer detected for several consecutive polls, the app leaves gaming mode automatically
 
-## Building the Executable
+## Certificates
 
-Install build dependencies:
+The app generates a self-signed certificate automatically for the local HTTPS server.
 
-```powershell
-python -m pip install -r requirements.txt -r requirements-build.txt
-```
-
-Build:
-
-```powershell
-scripts\build.ps1
-```
-
-Generated binary:
+Generated files are stored in:
 
 ```text
-dist\switcherino-pc.exe
+%LOCALAPPDATA%\SwitcherinoPc\certs
 ```
+
+Clients can retrieve certificate pinning material from:
+
+- `GET /certs`
+
+For the Raspberry Pi bridge, the PC can also:
+
+- trust a configured CA/server PEM via `rpi_ca_file`
+- optionally pin the Pi certificate with `rpi_cert_fingerprint`
+
+## Startup With Windows
+
+Autostart is implemented through the registry key:
+
+```text
+HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+```
+
+This means:
+
+- no administrator rights are required
+- startup is per-user
+- it starts after login, not before
+
+## Logging
+
+Logs are written to:
+
+```text
+%LOCALAPPDATA%\SwitcherinoPc\logs\switcherino-pc.log
+```
+
+If startup fails, the app also shows a Windows message box pointing to the config and log paths.
+
+## Debug Scripts
+
+Useful scripts in [`scripts/`](./scripts):
+
+- `scripts\debug-controller.py`: prints detected controllers, button events, axis and hat movement, and reports a long press after the configured hold duration. Useful for validating the real home-button index on the current machine.
+- `scripts\inspect-steam.py`: watches visible Windows titles to help debug Steam / Big Picture detection and rollback behavior.
+- `scripts\display-helper.ps1`: captures the current default and gaming display/audio profiles.
+- `scripts\initial-setup.ps1`: bootstraps the first local config and Raspberry Pi certificate trust.
+
+Controller debug example:
+
+```powershell
+python scripts\debug-controller.py
+```
+
+Useful options:
+
+- `--hold-seconds 3` to change the long-press threshold during tests
+- `--deadzone 0.35` to adjust how much analog movement is logged
+- `--poll-sleep 0.02` to change the polling cadence
+
+## `switcherino-rpi` Local Installation
+
+If you want the full PC + TV setup locally, the companion repository needs to be installed on a Raspberry Pi.
+
+See the Pi repository for the complete instructions:
+
+- [`switcherino-rpi` on GitHub](https://github.com/alecs297/switcherino-rpi)
 
 ## Current Limitations
 
 - display switching is intentionally limited to the four Windows projection-style topologies for V1
-- V1 does not try to restore a full monitor layout including refresh rate, HDR, resolution, scaling, or exact screen identities
-- controller home-button mapping still needs real hardware validation
+- V1 does not restore a full monitor layout with resolution, refresh rate, HDR, scaling, or exact screen identity
+- controller home-button mapping still needs real-hardware validation depending on the controller and driver stack
+- Steam detection is window-title based, which is pragmatic but not as strong as a dedicated integration
+- TV-side automation depends on the Raspberry Pi bridge being configured and reachable
