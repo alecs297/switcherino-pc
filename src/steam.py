@@ -1,71 +1,10 @@
 import ctypes
 import ctypes.wintypes
-import json
-import logging
-import subprocess
 from typing import List, Optional
-
-
-logger = logging.getLogger(__name__)
 
 
 def _normalize_window_text(value: str) -> str:
     return " ".join(str(value or "").split()).lower()
-
-
-def is_process_running(process_name: str) -> bool:
-    completed = subprocess.run(
-        ["tasklist", "/FI", f"IMAGENAME eq {process_name}"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return process_name.lower() in (completed.stdout or "").lower()
-
-
-def get_process_rows() -> List[dict]:
-    completed = subprocess.run(
-        [
-            "powershell.exe",
-            "-NoProfile",
-            "-Command",
-            "Get-CimInstance Win32_Process | Select-Object ProcessId,Name,CommandLine | ConvertTo-Json -Depth 3",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    text = (completed.stdout or "").strip()
-    if not text:
-        return []
-
-    data = json.loads(text)
-    if isinstance(data, dict):
-        data = [data]
-
-    rows = []
-    for item in data:
-        rows.append(
-            {
-                "pid": int(item.get("ProcessId", 0) or 0),
-                "name": str(item.get("Name", "") or ""),
-                "command_line": str(item.get("CommandLine", "") or ""),
-            }
-        )
-    return rows
-
-
-def is_pid_running(pid: int) -> bool:
-    if pid <= 0:
-        return False
-    completed = subprocess.run(
-        ["tasklist", "/FI", f"PID eq {pid}"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    output = (completed.stdout or "").lower()
-    return f" {pid} " in output or output.strip().endswith(str(pid))
 
 
 def get_visible_windows() -> List[dict]:

@@ -363,8 +363,8 @@ Example config:
       "volume_scalar": 1.0
     }
   },
-  "launch_big_picture_command": "cmd /c start \"\" \"steam://open/bigpicture\"",
-  "exit_big_picture_command": "cmd /c start \"\" \"steam://close/bigpicture\"",
+  "launch_big_picture_command": "steam://open/bigpicture",
+  "exit_big_picture_command": "steam://close/bigpicture",
   "steam_window_title_contains": "Big Picture",
   "steam_launch_grace_seconds": 10.0,
   "steam_poll_interval_seconds": 2.0,
@@ -410,8 +410,8 @@ Example config:
 | `gaming_profile.audio.endpoint_id` | Windows endpoint ID used when entering the gaming profile |
 | `gaming_profile.audio.endpoint_name` | Friendly endpoint name saved for logs/review |
 | `gaming_profile.audio.volume_scalar` | Volume restored for the gaming profile, from `0.0` to `1.0` |
-| `launch_big_picture_command` | Command used to launch Steam Big Picture |
-| `exit_big_picture_command` | Command used to request Big Picture exit |
+| `launch_big_picture_command` | Command or URI used to launch Steam Big Picture |
+| `exit_big_picture_command` | Command or URI used to request Big Picture exit |
 | `steam_window_title_contains` | Window title fragment used to detect whether Big Picture is still running |
 | `steam_launch_grace_seconds` | Grace period after launching Big Picture before rollback detection is allowed |
 | `steam_poll_interval_seconds` | Poll interval used to detect whether Big Picture is still visible |
@@ -440,6 +440,7 @@ Setup notes:
 - supported topologies are `internal_only`, `external_only`, `clone`, and `extend`
 - audio capture stores the current default render endpoint and current volume
 - you can leave the Raspberry Pi fields blank during early local testing
+- Steam launch defaults use native `steam://` URIs instead of `cmd /c start`
 
 ## Controller Behavior
 

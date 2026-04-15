@@ -1,10 +1,7 @@
 import ctypes
 import ctypes.wintypes
-import json
-import subprocess
-import sys
 import time
-from typing import List, Set, Dict
+from typing import List, Set
 
 # ====================== FONCTIONS EXISTANTES (inchangées) ======================
 def get_visible_windows() -> List[dict]:
@@ -35,38 +32,6 @@ def get_visible_windows() -> List[dict]:
 
     user32.EnumWindows(enum_windows_proc, 0)
     return windows
-
-
-def get_process_rows() -> List[dict]:
-    completed = subprocess.run(
-        [
-            "powershell.exe",
-            "-NoProfile",
-            "-Command",
-            "Get-CimInstance Win32_Process | Select-Object ProcessId,Name,CommandLine | ConvertTo-Json -Depth 3",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    text = (completed.stdout or "").strip()
-    if not text:
-        return []
-
-    data = json.loads(text)
-    if isinstance(data, dict):
-        data = [data]
-
-    rows = []
-    for item in data:
-        rows.append({
-            "pid": int(item.get("ProcessId", 0) or 0),
-            "name": str(item.get("Name", "") or ""),
-            "command_line": str(item.get("CommandLine", "") or ""),
-        })
-    return rows
-
-
 # ====================== NOUVELLE PARTIE : SURVEILLANCE ======================
 def main() -> int:
     print("Surveillance des fenêtres démarrée... (Ctrl+C pour arrêter)\n")

@@ -68,8 +68,8 @@ class AppConfig:
     )
     default_profile: ModeProfile = field(default_factory=ModeProfile)
     gaming_profile: ModeProfile = field(default_factory=ModeProfile)
-    launch_big_picture_command: str = 'cmd /c start "" "steam://open/bigpicture"'
-    exit_big_picture_command: str = 'cmd /c start "" "steam://close/bigpicture"'
+    launch_big_picture_command: str = "steam://open/bigpicture"
+    exit_big_picture_command: str = "steam://close/bigpicture"
     steam_window_title_contains: str = "Big Picture"
     steam_launch_grace_seconds: float = 5.0
     steam_poll_interval_seconds: float = 3.0

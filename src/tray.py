@@ -4,6 +4,7 @@ import subprocess
 import threading
 from pathlib import Path
 from urllib.parse import urlunsplit
+import shlex
 
 import pystray
 from PIL import Image, ImageDraw
@@ -29,7 +30,7 @@ def _run_optional_command(command: str) -> bool:
     text = str(command or "").strip()
     if not text:
         return False
-    subprocess.Popen(text, shell=True)
+    subprocess.Popen(shlex.split(text, posix=False))
     return True
 
 
