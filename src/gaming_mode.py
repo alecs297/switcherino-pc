@@ -8,7 +8,7 @@ from .commands import run_configured_command
 from .profile_actions import apply_audio_settings, apply_display_settings, profile_is_configured
 from .rpi_client import RpiClient
 from .steam import debug_visible_windows_for_title, find_big_picture_process_id, is_big_picture_running
-from .windows import is_remote_session
+from .windows import is_remote_session, show_desktop_notification
 
 
 logger = logging.getLogger(__name__)
@@ -133,7 +133,13 @@ class GamingModeManager:
             self._ensure_switch_allowed(trigger, "switch_to_game_mode")
             self._big_picture_pid = None
             logger.info("Entering gaming mode (trigger=%s)", trigger)
-            steps.append(await self.rpi_client.post_action("switch_to_game_mode"))
+            show_desktop_notification("Switcherino PC", "Switching to gaming mode...")
+            try:
+                steps.append(await self.rpi_client.post_action("switch_to_game_mode"))
+            except Exception:
+                if self.rpi_client.is_configured():
+                    show_desktop_notification("Switcherino PC", "Could not contact switcherino-rpi.")
+                raise
             steps.append(await apply_display_settings(self.config.gaming_profile.display, "display_enter"))
             steps.append(await apply_audio_settings(self.config.gaming_profile.audio, "audio_enter"))
             steps.append(await run_configured_command(self.config.launch_big_picture_command, "launch_big_picture"))
@@ -156,6 +162,7 @@ class GamingModeManager:
             steps: List[Dict] = []
             self._ensure_switch_allowed(trigger, "switch_to_default_mode")
             logger.info("Leaving gaming mode (trigger=%s, request_big_picture_close=%s)", trigger, request_big_picture_close)
+            show_desktop_notification("Switcherino PC", "Switching to default mode...")
             if request_big_picture_close:
                 steps.append(await run_configured_command(self.config.exit_big_picture_command, "exit_big_picture"))
             else:

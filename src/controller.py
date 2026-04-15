@@ -33,6 +33,7 @@ class ControllerMonitor:
             self.thread.join(timeout=2.0)
 
     def _run(self) -> None:
+        pygame = None
         try:
             import pygame
 
@@ -42,8 +43,20 @@ class ControllerMonitor:
             hold_state: Dict[int, Dict] = {}
 
             while not self.stop_event.is_set():
-                pygame.event.pump()
-                for event in pygame.event.get():
+                try:
+                    pygame.event.pump()
+                    events = pygame.event.get()
+                except (KeyError, SystemError):
+                    logger.exception("Controller event queue read failed; continuing monitor loop")
+                    try:
+                        pygame.joystick.quit()
+                        pygame.joystick.init()
+                    except Exception:
+                        logger.debug("Failed to reinitialize joystick subsystem", exc_info=True)
+                    time.sleep(self.config.controller_poll_interval_seconds)
+                    continue
+
+                for event in events:
                     joy = getattr(event, "instance_id", getattr(event, "joy", None))
                     if event.type == pygame.JOYDEVICEADDED:
                         joystick = pygame.joystick.Joystick(event.device_index)
@@ -106,6 +119,11 @@ class ControllerMonitor:
             logger.exception("Controller monitor crashed")
         finally:
             self.running = False
+            try:
+                pygame.joystick.quit()
+                pygame.quit()
+            except Exception:
+                logger.debug("Failed to shut down pygame cleanly", exc_info=True)
 
     def _flush_holds(self, hold_state: Dict[int, Dict]) -> None:
         for joy, state in hold_state.items():
