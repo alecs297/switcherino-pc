@@ -124,6 +124,11 @@ class AppRuntime:
             self.config = load_config()
             self.start()
 
+    def set_notifier(self, notifier) -> None:
+        manager = getattr(getattr(self.app, "state", None), "manager", None)
+        if manager is not None:
+            manager.set_notifier(notifier)
+
     def get_status_snapshot(self) -> dict:
         manager = getattr(getattr(self.app, "state", None), "manager", None)
         controller = getattr(getattr(self.app, "state", None), "controller", None)

@@ -54,6 +54,7 @@ class TrayController:
         self.config = config
         self.runtime = runtime
         self.icon = pystray.Icon("switcherino-pc", create_image(), "Switcherino PC")
+        self.runtime.set_notifier(self.notify)
 
     def run(self) -> None:
         self._refresh_menu()
@@ -136,6 +137,7 @@ class TrayController:
             try:
                 self.runtime.restart_server()
                 self.config = self.runtime.config
+                self.runtime.set_notifier(self.notify)
                 self.notify("Switcherino PC", "Web server restarted")
             except Exception as exc:
                 logger.exception("Failed to restart web server")

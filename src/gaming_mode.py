@@ -1,14 +1,14 @@
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from .config import AppConfig
 from .commands import run_configured_command
 from .profile_actions import apply_audio_settings, apply_display_settings, profile_is_configured
 from .rpi_client import RpiClient
 from .steam import debug_visible_windows_for_title, find_big_picture_process_id, is_big_picture_running
-from .windows import is_remote_session, show_desktop_notification
+from .windows import is_remote_session
 
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,7 @@ class GamingModeManager:
         self._last_rpi_status_at: Optional[str] = None
         self._last_rpi_status_error: str = ""
         self._last_rpi_status_ok: Optional[bool] = None
+        self._notifier: Optional[Callable[[str, str], None]] = None
 
     @property
     def active(self) -> bool:
@@ -118,6 +119,15 @@ class GamingModeManager:
             self._lock = asyncio.Lock()
         return self._lock
 
+    def set_notifier(self, notifier: Optional[Callable[[str, str], None]]) -> None:
+        self._notifier = notifier
+
+    def _notify(self, title: str, message: str) -> None:
+        if self._notifier is not None:
+            self._notifier(title, message)
+            return
+        logger.info("Skipping desktop notification because no notifier is registered: %s", message)
+
     async def enter(self, trigger: str) -> Dict:
         async with self._get_lock():
             steps: List[Dict] = []
@@ -133,12 +143,12 @@ class GamingModeManager:
             self._ensure_switch_allowed(trigger, "switch_to_game_mode")
             self._big_picture_pid = None
             logger.info("Entering gaming mode (trigger=%s)", trigger)
-            show_desktop_notification("Switcherino PC", "Switching to gaming mode...")
+            self._notify("Switcherino PC", "Switching to gaming mode...")
             try:
                 steps.append(await self.rpi_client.post_action("switch_to_game_mode"))
             except Exception:
                 if self.rpi_client.is_configured():
-                    show_desktop_notification("Switcherino PC", "Could not contact switcherino-rpi.")
+                    self._notify("Switcherino PC", "Could not contact switcherino-rpi.")
                 raise
             steps.append(await apply_display_settings(self.config.gaming_profile.display, "display_enter"))
             steps.append(await apply_audio_settings(self.config.gaming_profile.audio, "audio_enter"))
@@ -162,7 +172,7 @@ class GamingModeManager:
             steps: List[Dict] = []
             self._ensure_switch_allowed(trigger, "switch_to_default_mode")
             logger.info("Leaving gaming mode (trigger=%s, request_big_picture_close=%s)", trigger, request_big_picture_close)
-            show_desktop_notification("Switcherino PC", "Switching to default mode...")
+            self._notify("Switcherino PC", "Switching to default mode...")
             if request_big_picture_close:
                 steps.append(await run_configured_command(self.config.exit_big_picture_command, "exit_big_picture"))
             else:

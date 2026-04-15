@@ -1,6 +1,5 @@
 import ctypes
 import logging
-import subprocess
 from ctypes import wintypes
 
 
@@ -68,30 +67,3 @@ def show_error_message(title: str, message: str) -> None:
         ctypes.windll.user32.MessageBoxW(0, message, title, 0x10)
     except Exception:
         logger.exception("Unable to show Windows error message box")
-
-
-def show_desktop_notification(title: str, message: str) -> None:
-    escaped_title = str(title or "").replace("'", "''")
-    escaped_message = str(message or "").replace("'", "''")
-    script = (
-        "Add-Type -AssemblyName System.Windows.Forms; "
-        "Add-Type -AssemblyName System.Drawing; "
-        "$notify = New-Object System.Windows.Forms.NotifyIcon; "
-        "$notify.Icon = [System.Drawing.SystemIcons]::Information; "
-        f"$notify.BalloonTipTitle = '{escaped_title}'; "
-        f"$notify.BalloonTipText = '{escaped_message}'; "
-        "$notify.Visible = $true; "
-        "$notify.ShowBalloonTip(3000); "
-        "Start-Sleep -Seconds 4; "
-        "$notify.Dispose()"
-    )
-    try:
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        subprocess.Popen(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
-            startupinfo=startupinfo,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-    except Exception:
-        logger.exception("Unable to show desktop notification")
