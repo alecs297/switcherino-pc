@@ -11,6 +11,15 @@ logger = logging.getLogger(__name__)
 
 
 class ControllerMonitor:
+    _ALLOWED_EVENT_NAMES = (
+        "JOYDEVICEADDED",
+        "JOYDEVICEREMOVED",
+        "JOYBUTTONDOWN",
+        "JOYBUTTONUP",
+        "JOYAXISMOTION",
+        "JOYHATMOTION",
+    )
+
     def __init__(self, config: AppConfig, trigger_callback: Callable[[str], asyncio.Future]):
         self.config = config
         self.trigger_callback = trigger_callback
@@ -39,6 +48,7 @@ class ControllerMonitor:
 
             pygame.init()
             pygame.joystick.init()
+            self._configure_event_filter(pygame)
             self.running = True
             hold_state: Dict[int, Dict] = {}
 
@@ -49,8 +59,10 @@ class ControllerMonitor:
                 except (KeyError, SystemError):
                     logger.exception("Controller event queue read failed; continuing monitor loop")
                     try:
+                        pygame.event.clear()
                         pygame.joystick.quit()
                         pygame.joystick.init()
+                        self._configure_event_filter(pygame)
                     except Exception:
                         logger.debug("Failed to reinitialize joystick subsystem", exc_info=True)
                     time.sleep(self.config.controller_poll_interval_seconds)
@@ -62,6 +74,10 @@ class ControllerMonitor:
                         joystick = pygame.joystick.Joystick(event.device_index)
                         joystick.init()
                         logger.info("Controller connected: %s", joystick.get_name())
+                        continue
+                    if event.type == getattr(pygame, "JOYDEVICEREMOVED", None):
+                        hold_state.pop(joy, None)
+                        logger.info("Controller disconnected: %s", joy)
                         continue
 
                     if joy is None:
@@ -170,6 +186,18 @@ class ControllerMonitor:
             if profile.name_contains.lower() in name:
                 return profile
         return None
+
+    def _configure_event_filter(self, pygame_module) -> None:
+        allowed_events = [
+            getattr(pygame_module, event_name)
+            for event_name in self._ALLOWED_EVENT_NAMES
+            if hasattr(pygame_module, event_name)
+        ]
+        if not allowed_events:
+            return
+
+        pygame_module.event.set_blocked(None)
+        pygame_module.event.set_allowed(allowed_events)
 
     def _get_joystick(self, pygame_module, instance_id: int):
         count = pygame_module.joystick.get_count()
