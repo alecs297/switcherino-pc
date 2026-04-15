@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import threading
 import time
 from typing import Callable, Dict, Optional, Set
@@ -44,9 +45,9 @@ class ControllerMonitor:
     def _run(self) -> None:
         pygame = None
         try:
+            os.environ["SDL_VIDEO_ALLOW_SCREENSAVER"] = "1"
             import pygame
 
-            pygame.init()
             pygame.joystick.init()
             self._configure_event_filter(pygame)
             self.running = True
