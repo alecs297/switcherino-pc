@@ -48,6 +48,8 @@ class ControllerMonitor:
             os.environ["SDL_VIDEO_ALLOW_SCREENSAVER"] = "1"
             import pygame
 
+            # The event queue is unavailable until pygame's core subsystems are initialized.
+            pygame.init()
             pygame.joystick.init()
             self._configure_event_filter(pygame)
             self.running = True
@@ -133,8 +135,9 @@ class ControllerMonitor:
         finally:
             self.running = False
             try:
-                pygame.joystick.quit()
-                pygame.quit()
+                if pygame is not None:
+                    pygame.joystick.quit()
+                    pygame.quit()
             except Exception:
                 logger.debug("Failed to shut down pygame cleanly", exc_info=True)
 
