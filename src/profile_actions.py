@@ -1,8 +1,9 @@
+import os
 import logging
 from typing import Dict
 
 from .commands import run_process
-from .config import APP_DIR, AudioSettings, DisplaySettings, ModeProfile
+from .config import APP_DIR, AudioSettings, DisplaySettings, ModeProfile, TEMP_DIR, ensure_directories
 
 
 logger = logging.getLogger(__name__)
@@ -77,7 +78,11 @@ async def apply_audio_settings(settings: AudioSettings, label: str) -> Dict:
         settings.endpoint_name or "unnamed endpoint",
         endpoint_id,
     )
-    return await run_process(command, label)
+    ensure_directories()
+    helper_env = os.environ.copy()
+    helper_env["TEMP"] = str(TEMP_DIR)
+    helper_env["TMP"] = str(TEMP_DIR)
+    return await run_process(command, label, env=helper_env)
 
 
 def profile_is_configured(profile: ModeProfile) -> bool:

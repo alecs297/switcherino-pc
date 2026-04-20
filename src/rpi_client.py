@@ -13,6 +13,7 @@ from .config import AppConfig, CERTS_DIR, resolve_ca_file
 
 
 logger = logging.getLogger(__name__)
+PIN_VERIFY_TIMEOUT_SECONDS = 6.0
 
 
 class RpiClient:
@@ -30,7 +31,7 @@ class RpiClient:
         if not self.is_configured():
             return {"step": "rpi_status", "skipped": True, "reason": "rpi_not_configured"}
 
-        await asyncio.to_thread(self._verify_certificate_pin_if_needed)
+        await self._verify_certificate_pin_with_timeout()
         verify = self.config.rpi_verify_tls
         ca_file = self._get_usable_ca_file()
         if self.config.rpi_verify_tls and ca_file:
@@ -55,7 +56,7 @@ class RpiClient:
         if not self.is_configured():
             return {"step": "rpi_action", "skipped": True, "reason": "rpi_not_configured"}
 
-        await asyncio.to_thread(self._verify_certificate_pin_if_needed)
+        await self._verify_certificate_pin_with_timeout()
         verify = self.config.rpi_verify_tls
         ca_file = self._get_usable_ca_file()
         if self.config.rpi_verify_tls and ca_file:
@@ -77,6 +78,18 @@ class RpiClient:
                 "status_code": response.status_code,
                 "body": data,
             }
+
+    async def _verify_certificate_pin_with_timeout(self) -> None:
+        try:
+            await asyncio.wait_for(
+                asyncio.to_thread(self._verify_certificate_pin_if_needed),
+                timeout=PIN_VERIFY_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError as exc:
+            host = self.get_host() or "<unknown-host>"
+            raise RuntimeError(
+                f"Timed out while verifying RPi certificate pin for {host} after {PIN_VERIFY_TIMEOUT_SECONDS:.0f}s"
+            ) from exc
 
     def _verify_certificate_pin_if_needed(self) -> None:
         expected = self.config.rpi_cert_fingerprint.strip().lower()

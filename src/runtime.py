@@ -11,6 +11,7 @@ from .config import AppConfig, load_config
 
 
 logger = logging.getLogger(__name__)
+ACTION_TIMEOUT_SECONDS = 30.0
 
 
 class AppRuntime:
@@ -103,14 +104,31 @@ class AppRuntime:
         return bool(self.app.state.manager.active)
 
     def _run_manager_action(self, method_name: str, trigger: str):
-        if self.loop is None or self.app is None or not hasattr(self.app.state, "manager"):
+        if self.app is None or not hasattr(self.app.state, "manager"):
             raise RuntimeError("Server loop is not ready")
-        manager = self.app.state.manager
+        app_state = self.app.state
+        loop = getattr(app_state, "loop", None) or self.loop
+        if loop is None:
+            raise RuntimeError("Server loop is not ready")
+        manager = app_state.manager
         if method_name == "enter":
             coro = manager.enter(trigger)
         else:
             coro = manager.exit(trigger, True)
-        return asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout=30.0)
+
+        async def run_with_timeout():
+            return await asyncio.wait_for(coro, timeout=ACTION_TIMEOUT_SECONDS)
+
+        future = asyncio.run_coroutine_threadsafe(run_with_timeout(), loop)
+        try:
+            return future.result(timeout=ACTION_TIMEOUT_SECONDS + 5.0)
+        except Exception as exc:
+            action_name = "switch_to_game_mode" if method_name == "enter" else "switch_to_default_mode"
+            logger.exception("Tray action %s failed or timed out", action_name)
+            raise RuntimeError(
+                f"{action_name} did not finish within {ACTION_TIMEOUT_SECONDS:.0f}s. "
+                "The in-flight transition was cancelled."
+            ) from exc
 
     def enter_game_mode_from_tray(self):
         return self._run_manager_action("enter", "tray")

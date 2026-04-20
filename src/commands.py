@@ -4,6 +4,7 @@ import os
 import re
 import shlex
 import subprocess
+from os import PathLike
 from typing import Dict, Optional, Sequence, Union
 
 
@@ -16,12 +17,14 @@ async def run_process(
     label: str,
     *,
     cwd: Optional[str] = None,
+    env: Optional[Dict[str, Union[str, PathLike[str]]]] = None,
 ) -> Dict:
     logger.info("Running process for %s: %s", label, command)
     completed = await asyncio.to_thread(
         subprocess.run,
         command,
         cwd=cwd,
+        env=env,
         capture_output=True,
         text=True,
         check=False,

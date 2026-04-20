@@ -12,6 +12,7 @@ DATA_DIR = Path(os.environ.get("LOCALAPPDATA", APP_DIR / ".local")) / "Switcheri
 CONFIG_PATH = DATA_DIR / "config.json"
 CERTS_DIR = DATA_DIR / "certs"
 LOG_DIR = DATA_DIR / "logs"
+TEMP_DIR = DATA_DIR / "temp"
 LOG_FILE = LOG_DIR / "switcherino-pc.log"
 
 
@@ -86,6 +87,7 @@ def ensure_directories() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     CERTS_DIR.mkdir(parents=True, exist_ok=True)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
+    TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _default_config() -> AppConfig:

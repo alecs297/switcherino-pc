@@ -42,6 +42,7 @@ def create_app(config: AppConfig) -> FastAPI:
     async def lifespan(app: FastAPI):
         nonlocal steam_task, rpi_status_task, loop
         loop = asyncio.get_running_loop()
+        app.state.loop = loop
         local_stop_event = asyncio.Event()
         ensure_self_signed_cert(config.cert_file, config.key_file)
         sync_autostart(config)
@@ -57,6 +58,7 @@ def create_app(config: AppConfig) -> FastAPI:
             await steam_task
         if rpi_status_task is not None:
             await rpi_status_task
+        app.state.loop = None
 
     loop = None
     controller = ControllerMonitor(config, trigger_enter)

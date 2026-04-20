@@ -145,13 +145,17 @@ class GamingModeManager:
             logger.info("Entering gaming mode (trigger=%s)", trigger)
             self._notify("Switcherino PC", "Switching to gaming mode...")
             try:
+                logger.info("Gaming mode enter step: rpi switch_to_game_mode")
                 steps.append(await self.rpi_client.post_action("switch_to_game_mode"))
             except Exception:
                 if self.rpi_client.is_configured():
                     self._notify("Switcherino PC", "Could not contact switcherino-rpi.")
                 raise
+            logger.info("Gaming mode enter step: display_enter")
             steps.append(await apply_display_settings(self.config.gaming_profile.display, "display_enter"))
+            logger.info("Gaming mode enter step: audio_enter")
             steps.append(await apply_audio_settings(self.config.gaming_profile.audio, "audio_enter"))
+            logger.info("Gaming mode enter step: launch_big_picture")
             steps.append(await run_configured_command(self.config.launch_big_picture_command, "launch_big_picture"))
             await self._capture_big_picture_pid()
 
