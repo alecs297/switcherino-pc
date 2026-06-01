@@ -17,7 +17,7 @@ The goal is simple: make a gaming PC feel more like a console when used from the
 Typical problem:
 
 - during normal use, the PC may use one monitor setup and one audio device
-- during TV gaming, the desired target is often a different display topology and a different audio endpoint
+- during TV gaming, the desired target is often a different display topology and a different audio device
 - the TV may also need to switch to the right HDMI input
 - Steam Big Picture should launch when entering the gaming state, then restore everything when it closes
 
@@ -56,7 +56,7 @@ flowchart LR
   API["Local HTTPS API"] --> PC
   PC --> RPI["switcherino-rpi"]
   PC --> DISP["Windows display topology"]
-  PC --> AUD["Windows audio endpoint"]
+  PC --> AUD["Windows audio device"]
   PC --> STEAM["Steam Big Picture"]
   RPI --> TV["LG TV / WebOS"]
 ```
@@ -73,7 +73,7 @@ flowchart LR
 - long press on a configurable controller button shortcut to trigger gaming mode
 - default shortcut is `PS/Xbox + R1` using button indices `5` and `10`
 - Windows display switching through the `DisplaySwitch.exe` topologies
-- Windows audio endpoint and volume switching
+- Windows audio device name and volume switching
 - Steam Big Picture launch and automatic rollback when it closes
 - persistent config, logs, and certificates under `%LOCALAPPDATA%`
 - PyInstaller packaging for a background Windows executable
@@ -99,7 +99,7 @@ Important architectural choices:
 
 - the PC exposes its own HTTPS API so triggers can come from the controller, tray, or another local client
 - the Pi and PC use a compatible action vocabulary (`switch_to_game_mode`, `switch_to_default_mode`) to keep orchestration simple
-- Windows switching is intentionally conservative in V1: display topology, default audio endpoint, and volume
+- Windows switching is intentionally conservative in V1: display topology, default audio device, and volume
 - rollback is tied to Steam Big Picture visibility, not only to manual actions
 - switching is blocked during Remote Desktop sessions to avoid unsafe display/audio changes
 
@@ -219,7 +219,7 @@ That helper:
 - captures a `default_profile`
 - captures a `gaming_profile`
 - stores the chosen display topology for each profile
-- stores the current default render endpoint and volume when audio capture is enabled
+- stores the current default render device name and volume when audio capture is enabled
 
 Recommended capture flow:
 
@@ -347,8 +347,7 @@ Example config:
     },
     "audio": {
       "enabled": true,
-      "endpoint_id": "{0.0.0.00000000}.{example-default}",
-      "endpoint_name": "Speakers",
+      "device_name": "Speakers",
       "volume_scalar": 0.6
     }
   },
@@ -358,8 +357,7 @@ Example config:
     },
     "audio": {
       "enabled": true,
-      "endpoint_id": "{0.0.0.00000000}.{example-gaming}",
-      "endpoint_name": "LG TV",
+      "device_name": "LG TV",
       "volume_scalar": 1.0
     }
   },
@@ -402,13 +400,11 @@ Example config:
 | `controller_profiles` | Controller name matching and button-shortcut mapping used by the controller monitor |
 | `default_profile.display.topology` | Display topology used when returning to the normal PC state |
 | `default_profile.audio.enabled` | Whether the default profile restores audio |
-| `default_profile.audio.endpoint_id` | Windows endpoint ID used when returning to the default profile |
-| `default_profile.audio.endpoint_name` | Friendly endpoint name saved for logs/review |
+| `default_profile.audio.device_name` | Friendly Windows render-device name matched when returning to the default profile |
 | `default_profile.audio.volume_scalar` | Volume restored for the default profile, from `0.0` to `1.0` |
 | `gaming_profile.display.topology` | Display topology used when entering the gaming state |
 | `gaming_profile.audio.enabled` | Whether the gaming profile restores audio |
-| `gaming_profile.audio.endpoint_id` | Windows endpoint ID used when entering the gaming profile |
-| `gaming_profile.audio.endpoint_name` | Friendly endpoint name saved for logs/review |
+| `gaming_profile.audio.device_name` | Friendly Windows render-device name matched when entering the gaming profile |
 | `gaming_profile.audio.volume_scalar` | Volume restored for the gaming profile, from `0.0` to `1.0` |
 | `launch_big_picture_command` | Command or URI used to launch Steam Big Picture |
 | `exit_big_picture_command` | Command or URI used to request Big Picture exit |
@@ -438,7 +434,8 @@ Setup notes:
 
 - V1 display switching is topology-based and uses the same projection model as `Win+P`
 - supported topologies are `internal_only`, `external_only`, `clone`, and `extend`
-- audio capture stores the current default render endpoint and current volume
+- audio capture stores the current default render device name and current volume
+- audio switching matches active render devices by friendly name, so duplicate names can make switching ambiguous
 - you can leave the Raspberry Pi fields blank during early local testing
 - Steam launch defaults use native `steam://` URIs instead of `cmd /c start`
 
@@ -529,15 +526,15 @@ Entering gaming mode currently does the following:
 
 1. call the Raspberry Pi with `switch_to_game_mode`
 2. apply `gaming_profile.display.topology`
-3. optionally restore `gaming_profile.audio.endpoint_id` and `gaming_profile.audio.volume_scalar`
-4. launch Steam Big Picture
+3. launch Steam Big Picture
+4. optionally restore `gaming_profile.audio.device_name` and `gaming_profile.audio.volume_scalar`
 
 Leaving gaming mode currently does the following:
 
 1. request Big Picture exit, unless it is already gone
 2. call the Raspberry Pi with `switch_to_default_mode`
 3. apply `default_profile.display.topology`
-4. optionally restore `default_profile.audio.endpoint_id` and `default_profile.audio.volume_scalar`
+4. optionally restore `default_profile.audio.device_name` and `default_profile.audio.volume_scalar`
 
 Automatic rollback:
 

@@ -149,7 +149,7 @@ Write-Host ""
 Write-Host "Still worth reviewing manually:"
 Write-Host "  - default_profile.display.topology"
 Write-Host "  - gaming_profile.display.topology"
-Write-Host "  - audio endpoint and volume settings if needed"
+Write-Host "  - audio device name and volume settings if needed"
 Write-Host ""
 
 if (Prompt-DefaultYes "Run the interactive display/audio profile helper now?") {

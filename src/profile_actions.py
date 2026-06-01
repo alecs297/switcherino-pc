@@ -38,14 +38,15 @@ async def apply_display_settings(settings: DisplaySettings, label: str) -> Dict:
     logger.info("Applying display topology for %s: %s", label, topology)
     return await run_process(command, label)
 
+
 async def apply_audio_settings(settings: AudioSettings, label: str) -> Dict:
     if not settings.enabled:
         logger.info("Skipping %s because audio switching is disabled", label)
         return {"step": label, "skipped": True, "reason": "audio_disabled"}
 
-    endpoint_id = str(settings.endpoint_id or "").strip()
-    if not endpoint_id:
-        logger.warning("Audio switching is enabled for %s but no endpoint is configured", label)
+    device_name = str(settings.device_name or "").strip()
+    if not device_name:
+        logger.warning("Audio switching is enabled for %s but no device name is configured", label)
         return {"step": label, "skipped": True, "reason": "audio_not_configured"}
 
     if not AUDIO_HELPER_PATH.exists():
@@ -66,17 +67,16 @@ async def apply_audio_settings(settings: AudioSettings, label: str) -> Dict:
         str(AUDIO_HELPER_PATH),
         "-Action",
         "apply",
-        "-EndpointId",
-        endpoint_id,
+        "-DeviceName",
+        device_name,
     ]
     if settings.volume_scalar is not None:
         command.extend(["-VolumeScalar", str(settings.volume_scalar)])
 
     logger.info(
-        "Applying audio endpoint for %s: %s (%s)",
+        "Applying audio device for %s: %s",
         label,
-        settings.endpoint_name or "unnamed endpoint",
-        endpoint_id,
+        device_name,
     )
     ensure_directories()
     helper_env = os.environ.copy()

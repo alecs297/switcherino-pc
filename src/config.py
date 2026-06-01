@@ -30,8 +30,7 @@ class DisplaySettings:
 @dataclass
 class AudioSettings:
     enabled: bool = False
-    endpoint_id: str = ""
-    endpoint_name: str = ""
+    device_name: str = ""
     volume_scalar: Optional[float] = None
 
 
@@ -176,8 +175,7 @@ def _parse_audio_settings(raw: Optional[dict], default: AudioSettings) -> AudioS
 
     return AudioSettings(
         enabled=bool(raw.get("enabled", default.enabled)),
-        endpoint_id=str(raw.get("endpoint_id", default.endpoint_id) or ""),
-        endpoint_name=str(raw.get("endpoint_name", default.endpoint_name) or ""),
+        device_name=str(raw.get("device_name", default.device_name) or ""),
         volume_scalar=normalized_volume,
     )
 
@@ -189,6 +187,7 @@ def _parse_mode_profile(raw: Optional[dict], default: ModeProfile) -> ModeProfil
         display=_parse_display_settings(raw.get("display"), default.display),
         audio=_parse_audio_settings(raw.get("audio"), default.audio),
     )
+
 
 def load_config(path: Path = CONFIG_PATH) -> AppConfig:
     ensure_directories()

@@ -67,8 +67,7 @@ class GamingModeManager:
                     },
                     "audio": {
                         "enabled": self.config.default_profile.audio.enabled,
-                        "endpoint_id": self.config.default_profile.audio.endpoint_id,
-                        "endpoint_name": self.config.default_profile.audio.endpoint_name,
+                        "device_name": self.config.default_profile.audio.device_name,
                         "volume_scalar": self.config.default_profile.audio.volume_scalar,
                     },
                 },
@@ -78,8 +77,7 @@ class GamingModeManager:
                     },
                     "audio": {
                         "enabled": self.config.gaming_profile.audio.enabled,
-                        "endpoint_id": self.config.gaming_profile.audio.endpoint_id,
-                        "endpoint_name": self.config.gaming_profile.audio.endpoint_name,
+                        "device_name": self.config.gaming_profile.audio.device_name,
                         "volume_scalar": self.config.gaming_profile.audio.volume_scalar,
                     },
                 },
@@ -153,10 +151,10 @@ class GamingModeManager:
                 raise
             logger.info("Gaming mode enter step: display_enter")
             steps.append(await apply_display_settings(self.config.gaming_profile.display, "display_enter"))
-            logger.info("Gaming mode enter step: audio_enter")
-            steps.append(await apply_audio_settings(self.config.gaming_profile.audio, "audio_enter"))
             logger.info("Gaming mode enter step: launch_big_picture")
             steps.append(await run_configured_command(self.config.launch_big_picture_command, "launch_big_picture"))
+            logger.info("Gaming mode enter step: audio_enter")
+            steps.append(await apply_audio_settings(self.config.gaming_profile.audio, "audio_enter"))
             await self._capture_big_picture_pid()
 
             self._active = True

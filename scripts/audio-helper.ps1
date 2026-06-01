@@ -3,7 +3,7 @@ param(
     [ValidateSet("capture", "apply")]
     [string]$Action,
 
-    [string]$EndpointId = "",
+    [string]$DeviceName = "",
 
     [double]$VolumeScalar = -1
 )
@@ -17,6 +17,7 @@ function Ensure-AudioInterop {
 
     Add-Type -TypeDefinition @"
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
 namespace SwitcherinoAudio
@@ -73,11 +74,20 @@ namespace SwitcherinoAudio
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     public interface IMMDeviceEnumerator
     {
-        int EnumAudioEndpoints(EDataFlow dataFlow, uint dwStateMask, out object ppDevices);
+        int EnumAudioEndpoints(EDataFlow dataFlow, uint dwStateMask, out IMMDeviceCollection ppDevices);
         int GetDefaultAudioEndpoint(EDataFlow dataFlow, ERole role, out IMMDevice ppEndpoint);
         int GetDevice([MarshalAs(UnmanagedType.LPWStr)] string pwstrId, out IMMDevice ppDevice);
         int RegisterEndpointNotificationCallback(IntPtr pClient);
         int UnregisterEndpointNotificationCallback(IntPtr pClient);
+    }
+
+    [ComImport]
+    [Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    public interface IMMDeviceCollection
+    {
+        int GetCount(out uint pcDevices);
+        int Item(uint nDevice, out IMMDevice ppDevice);
     }
 
     [ComImport]
@@ -155,14 +165,27 @@ namespace SwitcherinoAudio
 
     public class AudioSnapshot
     {
-        public string endpoint_id { get; set; }
-        public string endpoint_name { get; set; }
+        public string device_name { get; set; }
         public float volume_scalar { get; set; }
         public bool muted { get; set; }
     }
 
+    public class AudioApplyResult
+    {
+        public string device_name { get; set; }
+        public string resolved_endpoint_id { get; set; }
+        public float? volume_scalar { get; set; }
+    }
+
+    internal class AudioDeviceMatch
+    {
+        public string DeviceId { get; set; }
+        public string DeviceName { get; set; }
+    }
+
     public static class AudioManager
     {
+        private const uint DEVICE_STATE_ACTIVE = 0x00000001;
         private static PROPERTYKEY PKEY_Device_FriendlyName = new PROPERTYKEY
         {
             fmtid = new Guid("a45c254e-df1c-4efd-8020-67d146a850e0"),
@@ -188,8 +211,7 @@ namespace SwitcherinoAudio
                 Marshal.ThrowExceptionForHR(endpointVolume.GetMute(out muted));
                 return new AudioSnapshot
                 {
-                    endpoint_id = GetDeviceId(device),
-                    endpoint_name = GetDeviceFriendlyName(device),
+                    device_name = GetDeviceFriendlyName(device),
                     volume_scalar = volume,
                     muted = muted
                 };
@@ -211,19 +233,20 @@ namespace SwitcherinoAudio
             }
         }
 
-        public static void ApplyRenderEndpoint(string endpointId, float? volumeScalar)
+        public static AudioApplyResult ApplyRenderDevice(string deviceName, float? volumeScalar)
         {
-            if (string.IsNullOrWhiteSpace(endpointId))
+            if (string.IsNullOrWhiteSpace(deviceName))
             {
-                throw new ArgumentException("EndpointId is required.", "endpointId");
+                throw new ArgumentException("DeviceName is required.", "deviceName");
             }
 
+            var match = ResolveRenderEndpoint(deviceName);
             var policy = (IPolicyConfig)(new PolicyConfigClient());
             try
             {
-                Marshal.ThrowExceptionForHR(policy.SetDefaultEndpoint(endpointId, ERole.eConsole));
-                Marshal.ThrowExceptionForHR(policy.SetDefaultEndpoint(endpointId, ERole.eMultimedia));
-                Marshal.ThrowExceptionForHR(policy.SetDefaultEndpoint(endpointId, ERole.eCommunications));
+                Marshal.ThrowExceptionForHR(policy.SetDefaultEndpoint(match.DeviceId, ERole.eConsole));
+                Marshal.ThrowExceptionForHR(policy.SetDefaultEndpoint(match.DeviceId, ERole.eMultimedia));
+                Marshal.ThrowExceptionForHR(policy.SetDefaultEndpoint(match.DeviceId, ERole.eCommunications));
             }
             finally
             {
@@ -238,7 +261,7 @@ namespace SwitcherinoAudio
                 try
                 {
                     enumerator = GetEnumerator();
-                    device = enumerator.GetDevice(endpointId);
+                    device = enumerator.GetDevice(match.DeviceId);
                     endpointVolume = GetEndpointVolume(device);
                     Marshal.ThrowExceptionForHR(endpointVolume.SetMasterVolumeLevelScalar(volumeScalar.Value, Guid.Empty));
                 }
@@ -258,6 +281,13 @@ namespace SwitcherinoAudio
                     }
                 }
             }
+
+            return new AudioApplyResult
+            {
+                device_name = match.DeviceName,
+                resolved_endpoint_id = match.DeviceId,
+                volume_scalar = volumeScalar
+            };
         }
 
         private static IMMDeviceEnumerator GetEnumerator()
@@ -272,10 +302,24 @@ namespace SwitcherinoAudio
             return device;
         }
 
+        private static IMMDeviceCollection EnumAudioEndpoints(this IMMDeviceEnumerator enumerator, EDataFlow flow, uint stateMask)
+        {
+            IMMDeviceCollection collection;
+            Marshal.ThrowExceptionForHR(enumerator.EnumAudioEndpoints(flow, stateMask, out collection));
+            return collection;
+        }
+
         private static IMMDevice GetDefaultAudioEndpoint(this IMMDeviceEnumerator enumerator, EDataFlow flow, ERole role)
         {
             IMMDevice device;
             Marshal.ThrowExceptionForHR(enumerator.GetDefaultAudioEndpoint(flow, role, out device));
+            return device;
+        }
+
+        private static IMMDevice GetCollectionItem(this IMMDeviceCollection collection, uint deviceIndex)
+        {
+            IMMDevice device;
+            Marshal.ThrowExceptionForHR(collection.Item(deviceIndex, out device));
             return device;
         }
 
@@ -306,6 +350,94 @@ namespace SwitcherinoAudio
             }
         }
 
+        private static AudioDeviceMatch ResolveRenderEndpoint(string requestedDeviceName)
+        {
+            IMMDeviceEnumerator enumerator = null;
+            IMMDeviceCollection collection = null;
+            var matches = new List<AudioDeviceMatch>();
+            var availableNames = new List<string>();
+            try
+            {
+                enumerator = GetEnumerator();
+                collection = enumerator.EnumAudioEndpoints(EDataFlow.eRender, DEVICE_STATE_ACTIVE);
+
+                uint deviceCount;
+                Marshal.ThrowExceptionForHR(collection.GetCount(out deviceCount));
+
+                string normalizedRequestedName = requestedDeviceName.Trim();
+                for (uint index = 0; index < deviceCount; index++)
+                {
+                    IMMDevice device = null;
+                    try
+                    {
+                        device = collection.GetCollectionItem(index);
+                        string candidateName = GetDeviceFriendlyName(device);
+                        if (!string.IsNullOrWhiteSpace(candidateName))
+                        {
+                            availableNames.Add(candidateName);
+                        }
+
+                        string normalizedCandidateName = candidateName == null ? string.Empty : candidateName.Trim();
+                        if (string.Equals(normalizedCandidateName, normalizedRequestedName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            matches.Add(
+                                new AudioDeviceMatch
+                                {
+                                    DeviceId = GetDeviceId(device),
+                                    DeviceName = candidateName
+                                }
+                            );
+                        }
+                    }
+                    finally
+                    {
+                        if (device != null)
+                        {
+                            Marshal.ReleaseComObject(device);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                if (collection != null)
+                {
+                    Marshal.ReleaseComObject(collection);
+                }
+                if (enumerator != null)
+                {
+                    Marshal.ReleaseComObject(enumerator);
+                }
+            }
+
+            if (matches.Count == 1)
+            {
+                return matches[0];
+            }
+
+            if (matches.Count > 1)
+            {
+                throw new InvalidOperationException(
+                    string.Format(
+                        "More than one active render device matched '{0}'. Matching endpoint IDs: {1}",
+                        requestedDeviceName,
+                        string.Join(", ", matches.ConvertAll(match => match.DeviceId).ToArray())
+                    )
+                );
+            }
+
+            string availableList = availableNames.Count == 0
+                ? "none"
+                : string.Join(", ", availableNames.ToArray());
+            throw new InvalidOperationException(
+                string.Format(
+                    "No active render device matched '{0}'. Available device names: {1}",
+                    requestedDeviceName,
+                    availableList
+                )
+            );
+        }
+
         private static IAudioEndpointVolume GetEndpointVolume(IMMDevice device)
         {
             object endpointVolume;
@@ -326,7 +458,7 @@ if ($Action -eq "capture") {
         $snapshot | ConvertTo-Json -Compress
     }
     catch {
-        Write-Error "Unable to capture the current Windows audio endpoint: $($_.Exception.Message)"
+        Write-Error "Unable to capture the current Windows audio device: $($_.Exception.Message)"
         exit 1
     }
     exit 0
@@ -337,14 +469,15 @@ try {
     if ($VolumeScalar -ge 0) {
         $normalizedVolume = [float]$VolumeScalar
     }
-    [SwitcherinoAudio.AudioManager]::ApplyRenderEndpoint($EndpointId, $normalizedVolume)
+    $result = [SwitcherinoAudio.AudioManager]::ApplyRenderDevice($DeviceName, $normalizedVolume)
     [pscustomobject]@{
         ok = $true
-        endpoint_id = $EndpointId
+        device_name = $result.device_name
+        resolved_endpoint_id = $result.resolved_endpoint_id
         volume_scalar = if ($normalizedVolume -ne $null) { $normalizedVolume } else { $null }
     } | ConvertTo-Json -Compress
 }
 catch {
-    Write-Error "Unable to apply the Windows audio endpoint: $($_.Exception.Message)"
+    Write-Error "Unable to apply the Windows audio device: $($_.Exception.Message)"
     exit 1
 }

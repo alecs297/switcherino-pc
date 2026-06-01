@@ -102,7 +102,7 @@ function Capture-AudioState {
 
     $json = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $audioHelperPath -Action capture
     if ($LASTEXITCODE -ne 0) {
-        throw "audio-helper.ps1 failed while capturing the current audio endpoint."
+        throw "audio-helper.ps1 failed while capturing the current audio device."
     }
     return $json | ConvertFrom-Json
 }
@@ -114,8 +114,17 @@ function Ensure-ModeProfileObject($profile) {
     if ($null -eq $profile.display) {
         $profile | Add-Member -NotePropertyName "display" -NotePropertyValue ([pscustomobject]@{})
     }
+    $existingAudio = $profile.audio
+    $normalizedAudio = [pscustomobject]@{
+        enabled = if ($null -ne $existingAudio) { [bool]$existingAudio.enabled } else { $false }
+        device_name = if ($null -ne $existingAudio) { [string]$existingAudio.device_name } else { "" }
+        volume_scalar = if ($null -ne $existingAudio) { $existingAudio.volume_scalar } else { $null }
+    }
     if ($null -eq $profile.audio) {
-        $profile | Add-Member -NotePropertyName "audio" -NotePropertyValue ([pscustomobject]@{})
+        $profile | Add-Member -NotePropertyName "audio" -NotePropertyValue $normalizedAudio
+    }
+    else {
+        $profile.audio = $normalizedAudio
     }
     return $profile
 }
@@ -157,28 +166,25 @@ function Configure-Profile($config, [string]$ProfileKey, [string]$DisplayDefault
         try {
             $audioState = Capture-AudioState
             $profile.audio.enabled = $true
-            $profile.audio.endpoint_id = [string]$audioState.endpoint_id
-            $profile.audio.endpoint_name = [string]$audioState.endpoint_name
+            $profile.audio.device_name = [string]$audioState.device_name
             $profile.audio.volume_scalar = [double]$audioState.volume_scalar
 
             Write-Host ""
-            Write-Host "Captured audio endpoint:"
-            Write-Host "  $($profile.audio.endpoint_name)"
+            Write-Host "Captured audio device:"
+            Write-Host "  $($profile.audio.device_name)"
             Write-Host "Captured volume:"
             Write-Host ("  {0:P0}" -f [double]$profile.audio.volume_scalar)
         }
         catch {
             Write-Warning "Unable to capture audio for '$ProfileKey': $($_.Exception.Message)"
             $profile.audio.enabled = $false
-            $profile.audio.endpoint_id = ""
-            $profile.audio.endpoint_name = ""
+            $profile.audio.device_name = ""
             $profile.audio.volume_scalar = $null
         }
     }
     else {
         $profile.audio.enabled = $false
-        $profile.audio.endpoint_id = ""
-        $profile.audio.endpoint_name = ""
+        $profile.audio.device_name = ""
         $profile.audio.volume_scalar = $null
     }
 }
@@ -198,7 +204,7 @@ Write-Host ""
 Write-Host "For each profile, put Windows in the desired state before pressing Enter."
 Write-Host ""
 
-$captureAudio = Prompt-DefaultYes "Capture the default audio endpoint and volume too?"
+$captureAudio = Prompt-DefaultYes "Capture the default audio device name and volume too?"
 
 Configure-Profile -config $config -ProfileKey "default_profile" -DisplayDefault "internal_only" -CaptureAudio $captureAudio
 Configure-Profile -config $config -ProfileKey "gaming_profile" -DisplayDefault "external_only" -CaptureAudio $captureAudio
@@ -213,9 +219,9 @@ Write-Host "Saved topologies:"
 Write-Host "  - default_profile.display.topology = $($config.default_profile.display.topology)"
 Write-Host "  - gaming_profile.display.topology = $($config.gaming_profile.display.topology)"
 if ($captureAudio) {
-    Write-Host "Saved audio endpoints:"
-    Write-Host "  - default_profile.audio.endpoint_name = $($config.default_profile.audio.endpoint_name)"
-    Write-Host "  - gaming_profile.audio.endpoint_name = $($config.gaming_profile.audio.endpoint_name)"
+    Write-Host "Saved audio device names:"
+    Write-Host "  - default_profile.audio.device_name = $($config.default_profile.audio.device_name)"
+    Write-Host "  - gaming_profile.audio.device_name = $($config.gaming_profile.audio.device_name)"
 }
 Write-Host ""
 
