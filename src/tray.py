@@ -159,5 +159,4 @@ class TrayController:
             _open_path(LOG_FILE)
 
     def _quit(self, icon, item) -> None:
-        threading.Thread(target=self.runtime.stop, daemon=True).start()
         self.stop()

@@ -8,6 +8,7 @@ from src.windows import show_error_message
 
 
 def main() -> None:
+    runtime = None
     try:
         config = load_config()
         configure_logging(config.log_level)
@@ -31,6 +32,9 @@ def main() -> None:
         logging.getLogger(__name__).exception("Fatal startup error")
         show_error_message("Switcherino PC", message)
         raise
+    finally:
+        if runtime is not None:
+            runtime.stop()
 
 
 if __name__ == "__main__":
